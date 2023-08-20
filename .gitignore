@@ -8,3 +8,7 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 .dev.vars
+pages/*
+next/.next
+next/node_modules
+.DS_Store
