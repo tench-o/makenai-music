@@ -1,13 +1,25 @@
 {
   "scripts": {
     "dev": "wrangler pages dev --compatibility-date=2023-01-01 ./pages",
-    "deploy": "wrangler pages deploy ./pages"
+    "deploy": "wrangler pages deploy ./pages",
+    "next-dev": "next dev",
+    "next-build": "next build",
+    "next-start": "next start",
+    "next-lint": "next lint",
+    "next": "next"
   },
   "dependencies": {
-    "hono": "^3.4.1"
+    "@cfworker/uuid": "^1.12.4",
+    "hono": "^3.4.1",
+    "next": "^13.4.19",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.5.1",
     "@cloudflare/workers-types": "^4.20230628.0",
+    "@types/node": "^20.5.1",
+    "@types/react": "18.2.20",
     "wrangler": "^3.5.1"
   }
 }
