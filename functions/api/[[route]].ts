@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
 import { handle } from 'hono/cloudflare-pages'
-import { uuid } from '@cfworker/uuid';
-import { encrypt, decrypt } from './lib/crypt';
-
 import { setCookie, getCookie } from 'hono/cookie'
+import { uuid } from '@cfworker/uuid';
+
+import { encrypt } from './lib/crypt';
 import { base64Encode } from './lib/base64';
-import { UserData, getUserData } from './lib/access-token';
-import { refreshToken } from './lib/spotify';
+import { getUserData } from './lib/access-token';
+import { getAccessToken, getAvailableDevices, getUserProfile, refreshToken, setTrackIdsToAvailableDevice } from './lib/spotify';
 import { getAllSpotifyContentUri, getSpotifyContentUri } from './lib/music';
 import { getCallbackUrl } from './lib/utils';
 
@@ -38,53 +38,16 @@ app.get('/auth', async (c) => {
 
 app.get('/callback', async (c) => {
 
-  const code = c.req.query("code") || null
-  const state = c.req.query("state") || null
-  const tokenBase64 = base64Encode(c.env.SPOTIFY_CLIENT_ID + ':' + c.env.SPOTIFY_CLIENT_SECRET)
+  const code = c.req.query("code") || ""
+  const state = c.req.query("state") || ""
 
   if (state === null) {
     return c.redirect('/#' + "error=state_mismatch");
   } else {
-    const authOptions = {
-      url: 'https://accounts.spotify.com/api/token',
-      form: {
-        code: code,
-        redirect_uri: getCallbackUrl(c),
-        grant_type: 'authorization_code'
-      },
-      headers: {
-        'Authorization': 'Basic ' + (tokenBase64)
-      },
-      json: true
-    }
+    const data = await getAccessToken(c, code, state)
 
-    const body = new URLSearchParams
-    body.append('code', code as string)
-    body.append('redirect_uri', getCallbackUrl(c))
-    body.append('grant_type', 'authorization_code')
-
-    const res = await fetch(authOptions.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': "application/x-www-form-urlencoded",
-        'Authorization': 'Basic ' + (tokenBase64)
-      },
-      body: body.toString()
-    })
-
-    const data = await res.json<UserData>()
-
-    const userDataRes = await fetch("https://api.spotify.com/v1/me", {
-      method: 'GET',
-      headers: {
-        'Content-Type': "application/x-www-form-urlencoded",
-        'Authorization': 'Bearer ' + data.access_token
-      }
-    })
-
-    const userData = await userDataRes.json<{ uri: string }>()
-    const uri = userData.uri
-
+    const profile = await getUserProfile(c, data.access_token)
+    const uri = profile.uri
     const cryptedUserData = await encrypt(c, JSON.stringify(data), uri)
 
     setCookie(c, 'ud', cryptedUserData, {
@@ -111,15 +74,7 @@ app.get('/devices', async (c) => {
     return c.json({ message: 'Unauthorized.' }, 401)
   }
 
-  const devicesRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
-    headers: {
-      'Content-Type': "application/x-www-form-urlencoded",
-      'Authorization': 'Bearer ' + userData.access_token
-    },
-    method: 'GET'
-  })
-
-  const devices = await devicesRes.json<any>()
+  const devices = await getAvailableDevices(c, userData.access_token)
 
   return c.json({
     devices: devices,
@@ -130,56 +85,40 @@ app.get('/devices', async (c) => {
 
 app.post('/play', async (c) => {
   const trackId = c.req.query("track_id") || ""
-  const device_id = c.req.query("device_id") || ""
+  const deviceId = c.req.query("device_id") || ""
 
   const userData = await getUserData(c)
   if (userData.isLoggedIn === false) {
     return c.json({ message: 'Unauthorized.' }, 401)
   }
 
-  const uri = getSpotifyContentUri(trackId)
-
-  const request = {
-    uris: [uri]
-  }
 
   const accessToken = await refreshToken(c, userData)
+  if (accessToken === "") {
+    return c.json({ message: 'Unauthorized.' }, 401)
+  }
 
-  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device_id}`, {
-    headers: {
-      'Content-Type': "application/json",
-      'Authorization': 'Bearer ' + accessToken
-    },
-    method: 'PUT',
-    body: JSON.stringify(request)
-  })
+  const uri = getSpotifyContentUri(trackId)
+  await setTrackIdsToAvailableDevice(c, accessToken, deviceId, [uri])
 
   return c.text("ok")
 })
 
 // 曲を入れ替える可能性もあるから、適当にv1とか打っておこう
 app.post('/package/v1', async (c) => {
-  const device_id = c.req.query("device_id") || ""
+  const deviceId = c.req.query("device_id") || ""
 
   const userData = await getUserData(c)
   if (userData.isLoggedIn === false) {
     return c.json({ message: 'Unauthorized.' }, 401)
   }
 
-  const request = {
-    uris: getAllSpotifyContentUri()
+  const accessToken = await refreshToken(c, userData)
+  if (accessToken === "") {
+    return c.json({ message: 'Unauthorized.' }, 401)
   }
 
-  const accessToken = await refreshToken(c, userData)
-
-  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device_id}`, {
-    headers: {
-      'Content-Type': "application/json",
-      'Authorization': 'Bearer ' + accessToken
-    },
-    method: 'PUT',
-    body: JSON.stringify(request)
-  })
+  await setTrackIdsToAvailableDevice(c, accessToken, deviceId, getAllSpotifyContentUri())
 
   return c.text("ok")
 })

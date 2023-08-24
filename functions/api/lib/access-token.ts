@@ -3,7 +3,7 @@ import { getCookie } from 'hono/cookie';
 import { encrypt, decrypt } from './crypt';
 import { base64Decode, base64Encode } from './base64';
 
-type UserData = {
+type OauthToken = {
     access_token: string
     token_type: string
     scope: string
@@ -12,12 +12,12 @@ type UserData = {
     isLoggedIn: boolean
 }
 
-const getUserData = async (c: Context): Promise<UserData> => {
+const getUserData = async (c: Context): Promise<OauthToken> => {
     const uid = c.req.query("uid") || getCookie(c, 'uid') || ''
     const cryptedUserData = c.req.query("ud") || getCookie(c, 'ud') || ''
 
     if (uid === "" || cryptedUserData === "") {
-        const notLogin: UserData = {
+        const notLogin: OauthToken = {
             access_token: "",
             token_type: "",
             scope: "",
@@ -30,13 +30,13 @@ const getUserData = async (c: Context): Promise<UserData> => {
     }
 
     const userDataStr = await decrypt(c, cryptedUserData, base64Decode(uid))
-    const userData = JSON.parse(userDataStr) as UserData
+    const userData = JSON.parse(userDataStr) as OauthToken
     userData.isLoggedIn = true
 
     return userData
 }
 
 export {
-    type UserData,
+    type OauthToken,
     getUserData
 }
